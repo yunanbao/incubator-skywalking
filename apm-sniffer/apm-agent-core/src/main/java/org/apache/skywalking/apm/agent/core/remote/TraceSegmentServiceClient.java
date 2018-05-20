@@ -16,11 +16,11 @@
  *
  */
 
-
 package org.apache.skywalking.apm.agent.core.remote;
 
 import io.grpc.Channel;
 import io.grpc.stub.StreamObserver;
+import java.util.List;
 import org.apache.skywalking.apm.agent.core.boot.BootService;
 import org.apache.skywalking.apm.agent.core.boot.DefaultImplementor;
 import org.apache.skywalking.apm.agent.core.boot.ServiceManager;
@@ -35,8 +35,6 @@ import org.apache.skywalking.apm.commons.datacarrier.consumer.IConsumer;
 import org.apache.skywalking.apm.network.proto.Downstream;
 import org.apache.skywalking.apm.network.proto.TraceSegmentServiceGrpc;
 import org.apache.skywalking.apm.network.proto.UpstreamSegment;
-
-import java.util.List;
 
 import static org.apache.skywalking.apm.agent.core.conf.Config.Buffer.BUFFER_SIZE;
 import static org.apache.skywalking.apm.agent.core.conf.Config.Buffer.CHANNEL_SIZE;
@@ -54,6 +52,7 @@ public class TraceSegmentServiceClient implements BootService, IConsumer<TraceSe
     private long segmentUplinkedCounter;
     private long segmentAbandonedCounter;
     private volatile DataCarrier<TraceSegment> carrier;
+    private volatile DataCarrier<TraceSegment> asyncSegmentBuffer;
     private volatile TraceSegmentServiceGrpc.TraceSegmentServiceStub serviceStub;
     private volatile GRPCChannelStatus status = GRPCChannelStatus.DISCONNECT;
 
@@ -70,6 +69,42 @@ public class TraceSegmentServiceClient implements BootService, IConsumer<TraceSe
         carrier = new DataCarrier<TraceSegment>(CHANNEL_SIZE, BUFFER_SIZE);
         carrier.setBufferStrategy(BufferStrategy.IF_POSSIBLE);
         carrier.consume(this, 1);
+        asyncSegmentBuffer = new DataCarrier<TraceSegment>(CHANNEL_SIZE, BUFFER_SIZE);
+        asyncSegmentBuffer.setBufferStrategy(BufferStrategy.BLOCKING);
+        asyncSegmentBuffer.consume(new IConsumer<TraceSegment>() {
+            @Override public void init() {
+
+            }
+
+            @Override public void consume(List<TraceSegment> data) {
+                boolean hasUnfinishedAsyncSegment = false;
+                for (TraceSegment traceSegment : data) {
+                    if (traceSegment.isReady4Transform()) {
+                        carrier.produce(traceSegment);
+                    } else {
+                        asyncSegmentBuffer.produce(traceSegment);
+                        hasUnfinishedAsyncSegment = true;
+                    }
+                }
+                if (hasUnfinishedAsyncSegment) {
+                    try {
+                        // Wait for unfinishedAsyncSegment
+                        // to avoid produce/consume in high frequently
+                        Thread.sleep(50L);
+                    } catch (InterruptedException e) {
+
+                    }
+                }
+            }
+
+            @Override public void onError(List<TraceSegment> data, Throwable t) {
+
+            }
+
+            @Override public void onExit() {
+
+            }
+        }, 1);
     }
 
     @Override
@@ -112,18 +147,24 @@ public class TraceSegmentServiceClient implements BootService, IConsumer<TraceSe
                 }
             });
 
+            int uplinkDataSize = 0;
             for (TraceSegment segment : data) {
                 try {
-                    UpstreamSegment upstreamSegment = segment.transform();
-                    upstreamSegmentStreamObserver.onNext(upstreamSegment);
+                    if (segment.isReady4Transform()) {
+                        UpstreamSegment upstreamSegment = segment.transform();
+                        upstreamSegmentStreamObserver.onNext(upstreamSegment);
+                        uplinkDataSize++;
+                    } else {
+                        asyncSegmentBuffer.produce(segment);
+                    }
                 } catch (Throwable t) {
                     logger.error(t, "Transform and send UpstreamSegment to collector fail.");
                 }
             }
             upstreamSegmentStreamObserver.onCompleted();
 
-            if (status.wait4Finish(TIMEOUT)) {
-                segmentUplinkedCounter += data.size();
+            if (uplinkDataSize > 0 && status.wait4Finish(TIMEOUT)) {
+                segmentUplinkedCounter += uplinkDataSize;
             }
         } else {
             segmentAbandonedCounter += data.size();

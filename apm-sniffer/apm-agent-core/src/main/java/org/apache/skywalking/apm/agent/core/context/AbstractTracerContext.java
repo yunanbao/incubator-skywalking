@@ -20,6 +20,7 @@
 package org.apache.skywalking.apm.agent.core.context;
 
 import org.apache.skywalking.apm.agent.core.context.trace.AbstractSpan;
+import org.apache.skywalking.apm.agent.core.context.trace.IManualSpan;
 
 /**
  * The <code>AbstractTracerContext</code> represents the tracer context manager.
@@ -104,4 +105,16 @@ public interface AbstractTracerContext {
      * @param span to finish
      */
     void stopSpan(AbstractSpan span);
+
+    /**
+     * Recruit the existed manual span in to current tracer context.
+     * @param span
+     */
+    void recruitSpan(IManualSpan span);
+
+    /**
+     * Archive the finished the manual span, and the span will archive into this tracer context.
+     * @param span
+     */
+    void archiveFinishedSpan(IManualSpan span);
 }

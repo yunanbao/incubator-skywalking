@@ -22,6 +22,7 @@ import org.apache.skywalking.apm.agent.core.boot.BootService;
 import org.apache.skywalking.apm.agent.core.boot.ServiceManager;
 import org.apache.skywalking.apm.agent.core.conf.RemoteDownstreamConfig;
 import org.apache.skywalking.apm.agent.core.context.trace.AbstractSpan;
+import org.apache.skywalking.apm.agent.core.context.trace.IManualSpan;
 import org.apache.skywalking.apm.agent.core.context.trace.TraceSegment;
 import org.apache.skywalking.apm.agent.core.dictionary.DictionaryUtil;
 import org.apache.skywalking.apm.agent.core.logging.api.ILog;
@@ -74,6 +75,23 @@ public class ContextManager implements TracingContextListener, BootService, Igno
 
     private static AbstractTracerContext get() {
         return CONTEXT.get();
+    }
+
+    public static AbstractSpan recruit(IManualSpan span) {
+        if (EXTEND_SERVICE == null) {
+            EXTEND_SERVICE = ServiceManager.INSTANCE.findService(ContextManagerExtendService.class);
+        }
+        AbstractTracerContext context = CONTEXT.get();
+        if (context == null) {
+            if (span.isSampled()) {
+                context = EXTEND_SERVICE.newTracingContext();
+            } else {
+                context = EXTEND_SERVICE.newIgnoredContext();
+            }
+            CONTEXT.set(context);
+        }
+        context.recruitSpan(span);
+        return span;
     }
 
     /**

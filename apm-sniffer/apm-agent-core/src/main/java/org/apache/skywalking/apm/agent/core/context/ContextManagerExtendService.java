@@ -58,12 +58,20 @@ public class ContextManagerExtendService implements BootService {
         } else {
             SamplingService samplingService = ServiceManager.INSTANCE.findService(SamplingService.class);
             if (forceSampling || samplingService.trySampling()) {
-                context = new TracingContext();
+                context = newTracingContext();
             } else {
-                context = new IgnoredTracerContext();
+                context = newIgnoredContext();
             }
         }
 
         return context;
+    }
+
+    protected AbstractTracerContext newTracingContext() {
+        return new TracingContext();
+    }
+
+    protected AbstractTracerContext newIgnoredContext() {
+        return new IgnoredTracerContext();
     }
 }

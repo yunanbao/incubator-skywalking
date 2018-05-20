@@ -26,6 +26,7 @@ import org.apache.skywalking.apm.agent.core.context.trace.AbstractSpan;
 import org.apache.skywalking.apm.agent.core.context.trace.AbstractTracingSpan;
 import org.apache.skywalking.apm.agent.core.context.trace.EntrySpan;
 import org.apache.skywalking.apm.agent.core.context.trace.ExitSpan;
+import org.apache.skywalking.apm.agent.core.context.trace.IManualSpan;
 import org.apache.skywalking.apm.agent.core.context.trace.LocalSpan;
 import org.apache.skywalking.apm.agent.core.context.trace.NoopExitSpan;
 import org.apache.skywalking.apm.agent.core.context.trace.NoopSpan;
@@ -79,6 +80,8 @@ public class TracingContext implements AbstractTracerContext {
      */
     private int spanIdGenerator;
 
+    private ManualSpanHolder manualSpanHolder;
+
     /**
      * Initialize all fields with default value.
      */
@@ -94,7 +97,7 @@ public class TracingContext implements AbstractTracerContext {
      * Inject the context into the given carrier, only when the active span is an exit one.
      *
      * @param carrier to carry the context for crossing process.
-     * @throws IllegalStateException  if the active span isn't an exit one.
+     * @throws IllegalStateException if the active span isn't an exit one.
      * Ref to {@link AbstractTracerContext#inject(ContextCarrier)}
      */
     @Override
@@ -316,7 +319,7 @@ public class TracingContext implements AbstractTracerContext {
      * @param operationName most likely a service name of remote
      * @param remotePeer the network id(ip:port, hostname:port or ip1:port1,ip2,port, etc.)
      * @return the span represent an exit point of this segment.
-     * @see  ExitSpan
+     * @see ExitSpan
      */
     @Override
     public AbstractSpan createExitSpan(final String operationName, final String remotePeer) {
@@ -419,12 +422,38 @@ public class TracingContext implements AbstractTracerContext {
         }
     }
 
+    @Override
+    public void recruitSpan(IManualSpan span) {
+        if (manualSpanHolder == null) {
+            ManualSpanHolder.create(this);
+        }
+        manualSpanHolder.addSpan(span);
+        span.setOwner(this);
+    }
+
+    @Override
+    public void archiveFinishedSpan(IManualSpan span) {
+        if (manualSpanHolder == null) {
+            ManualSpanHolder.create(this);
+        }
+        manualSpanHolder.finishSpan(span);
+    }
+
+    boolean hasManualSpanHolder() {
+        return manualSpanHolder != null;
+    }
+
+    void setManualSpanHolder(ManualSpanHolder manualSpanHolder) {
+        this.manualSpanHolder = manualSpanHolder;
+    }
+
     /**
      * Finish this context, and notify all {@link TracingContextListener}s, managed by {@link
      * TracingContext.ListenerManager}
      */
     private void finish() {
         TraceSegment finishedSegment = segment.finish(isLimitMechanismWorking());
+        finishedSegment.setManualSpanHolder(manualSpanHolder);
         /**
          * Recheck the segment if the segment contains only one span.
          * Because in the runtime, can't sure this segment is part of distributed trace.

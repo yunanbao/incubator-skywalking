@@ -16,12 +16,12 @@
  *
  */
 
-
 package org.apache.skywalking.apm.agent.core.context.trace;
 
 import java.util.LinkedList;
 import java.util.List;
 import org.apache.skywalking.apm.agent.core.conf.RemoteDownstreamConfig;
+import org.apache.skywalking.apm.agent.core.context.ManualSpanHolder;
 import org.apache.skywalking.apm.agent.core.context.ids.DistributedTraceId;
 import org.apache.skywalking.apm.agent.core.context.ids.DistributedTraceIds;
 import org.apache.skywalking.apm.agent.core.context.ids.GlobalIdGenerator;
@@ -71,6 +71,8 @@ public class TraceSegment {
     private boolean ignore = false;
 
     private boolean isSizeLimited = false;
+
+    private ManualSpanHolder manualSpanHolder = null;
 
     /**
      * Create a default/empty trace segment, with current time as start time, and generate a new segment id.
@@ -151,6 +153,21 @@ public class TraceSegment {
 
     public void setIgnore(boolean ignore) {
         this.ignore = ignore;
+    }
+
+    public ManualSpanHolder getManualSpanHolder() {
+        return manualSpanHolder;
+    }
+
+    public void setManualSpanHolder(ManualSpanHolder manualSpanHolder) {
+        this.manualSpanHolder = manualSpanHolder;
+    }
+
+    public boolean isReady4Transform() {
+        if (manualSpanHolder != null) {
+            return manualSpanHolder.isAllFinished();
+        }
+        return true;
     }
 
     /**
