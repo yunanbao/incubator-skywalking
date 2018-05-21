@@ -90,12 +90,11 @@ public class ContextManager implements TracingContextListener, BootService, Igno
      *
      * @return
      */
-    private static AbstractTracerContext getAndClear(){
+    private static AbstractTracerContext getAndClear() {
         AbstractTracerContext context = get();
         CONTEXT.remove();
         return context;
     }
-
 
     /**
      * Use the given context, which is usually from other thread, through {@link #get()}
