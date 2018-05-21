@@ -72,8 +72,44 @@ public class ContextManager implements TracingContextListener, BootService, Igno
         return context;
     }
 
+    /**
+     * Get the current tracer context
+     *
+     * @return current context, or NULL if there is no context.
+     */
     private static AbstractTracerContext get() {
         return CONTEXT.get();
+    }
+
+    /**
+     * Get the current tracer context, then clear the context in current thread.
+     * This method should not be used when you want to move the context from one thread to another,
+     * and the original thread is not used for this context anymore.
+     *
+     * Consider this is used in certain and particular scenario only.
+     *
+     * @return
+     */
+    private static AbstractTracerContext getAndClear(){
+        AbstractTracerContext context = get();
+        CONTEXT.remove();
+        return context;
+    }
+
+
+    /**
+     * Use the given context, which is usually from other thread, through {@link #get()}
+     * The set op can be done, if and only if the current thread has no context,
+     * the reason for check this, is for avoiding the context and active span stack leak.
+     *
+     * @param existedContext
+     */
+    public static void use(AbstractTracerContext existedContext) {
+        if (get() == null) {
+            CONTEXT.set(existedContext);
+        } else {
+            throw new IllegalStateException("Can't use the existed context override the other one");
+        }
     }
 
     /**

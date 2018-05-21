@@ -19,6 +19,7 @@
 
 package org.apache.skywalking.apm.agent.core.context;
 
+import org.apache.skywalking.apm.agent.core.context.savepoint.ISavepoint;
 import org.apache.skywalking.apm.agent.core.context.trace.AbstractSpan;
 
 /**
@@ -104,4 +105,22 @@ public interface AbstractTracerContext {
      * @param span to finish
      */
     void stopSpan(AbstractSpan span);
+
+    /**
+     * Get the current savepoint, if context could give.
+     * In normal, there should be at least one active span in active stack.
+     *
+     * @return
+     */
+    ISavepoint savepoint();
+
+    /**
+     * Rollback to the given savepoint.
+     *
+     * The savepoint must be from this context,
+     * and the savepoint is still available to rollback to, such as the span is still active.
+     *
+     * @param savepoint for rollback to.
+     */
+    void rollback(ISavepoint savepoint);
 }

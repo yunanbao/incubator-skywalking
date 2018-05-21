@@ -22,6 +22,8 @@ import java.util.LinkedList;
 import java.util.List;
 import org.apache.skywalking.apm.agent.core.boot.ServiceManager;
 import org.apache.skywalking.apm.agent.core.conf.Config;
+import org.apache.skywalking.apm.agent.core.context.savepoint.ISavepoint;
+import org.apache.skywalking.apm.agent.core.context.savepoint.TracingSavepoint;
 import org.apache.skywalking.apm.agent.core.context.trace.AbstractSpan;
 import org.apache.skywalking.apm.agent.core.context.trace.AbstractTracingSpan;
 import org.apache.skywalking.apm.agent.core.context.trace.EntrySpan;
@@ -94,7 +96,7 @@ public class TracingContext implements AbstractTracerContext {
      * Inject the context into the given carrier, only when the active span is an exit one.
      *
      * @param carrier to carry the context for crossing process.
-     * @throws IllegalStateException  if the active span isn't an exit one.
+     * @throws IllegalStateException if the active span isn't an exit one.
      * Ref to {@link AbstractTracerContext#inject(ContextCarrier)}
      */
     @Override
@@ -316,7 +318,7 @@ public class TracingContext implements AbstractTracerContext {
      * @param operationName most likely a service name of remote
      * @param remotePeer the network id(ip:port, hostname:port or ip1:port1,ip2,port, etc.)
      * @return the span represent an exit point of this segment.
-     * @see  ExitSpan
+     * @see ExitSpan
      */
     @Override
     public AbstractSpan createExitSpan(final String operationName, final String remotePeer) {
@@ -417,6 +419,48 @@ public class TracingContext implements AbstractTracerContext {
         if (activeSpanStack.isEmpty()) {
             this.finish();
         }
+    }
+
+    @Override public ISavepoint savepoint() {
+        if (activeSpanStack.size() > 0) {
+            return new TracingSavepoint(this, peek());
+        } else {
+            throw new IllegalStateException("Can't create savepoint, no active span");
+        }
+    }
+
+    /**
+     * Rollback will not guarantee in multi thread scenarios.
+     * As TracingContext expected, it should be in a single thread only.
+     * If you need synchronization or lock with span finish, you should do it by yourself.
+     *
+     * @param savepoint for rollback to.
+     */
+    @Override public void rollback(ISavepoint savepoint) {
+        if (savepoint instanceof TracingSavepoint) {
+            TracingSavepoint tracingSavepoint = (TracingSavepoint)savepoint;
+            if (tracingSavepoint.getOwner() == this) {
+                boolean validSavepoint = false;
+                for (AbstractSpan span : this.activeSpanStack) {
+                    if (span == tracingSavepoint.getStopPoint()) {
+                        validSavepoint = true;
+                        break;
+                    }
+                }
+
+                if (validSavepoint) {
+                    throw new IllegalArgumentException("Savepoint is expired.");
+                }
+
+                while (tracingSavepoint.getStopPoint() != peek()) {
+                    AbstractSpan activeSpan = peek();
+                    this.stopSpan(activeSpan);
+                }
+            } else {
+                throw new IllegalArgumentException("TracingContext supports to rollback to its own savepoint only.");
+            }
+        }
+        throw new IllegalArgumentException("TracingContext supports savepoint in TracingSavepoint type only");
     }
 
     /**
